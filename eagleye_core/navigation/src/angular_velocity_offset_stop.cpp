@@ -74,25 +74,28 @@ AngularVelocityOffsetStopStatus AngularVelocityOffsetStopEstimator::imuCallback(
 
   if (not_translating && (!is_estimation_started_ || not_rotating))
   {
-    angular_velocity_buffer_.push_back(angular_velocity);
+    Eigen::Vector3d divided_angular_velocity = angular_velocity / static_cast<double>(buffer_size_);
+    tmp_estimated_offset_stop_ -= divided_angular_velocity;
+    angular_velocity_buffer_.push_back(divided_angular_velocity);
 
     // Remove element if buffer size is exceeded
     if (angular_velocity_buffer_.size() > buffer_size_)
     {
+      tmp_estimated_offset_stop_ += angular_velocity_buffer_[0];
       angular_velocity_buffer_.pop_front();
     }
 
     // Estimate offset stop if buffer is full
     if (angular_velocity_buffer_.size() == buffer_size_)
     {
-      Eigen::Vector3d sum = std::accumulate(angular_velocity_buffer_.begin(), angular_velocity_buffer_.end(), Eigen::Vector3d(0.0, 0.0, 0.0));
-      estimated_offset_stop_ = - sum / static_cast<double>(buffer_size_);
+      estimated_offset_stop_ = tmp_estimated_offset_stop_;
       is_estimation_started_ = true;
       status.is_estimated_now = true;
     }
   }
   else
   {
+    tmp_estimated_offset_stop_ = Eigen::Vector3d::Zero();
     angular_velocity_buffer_.clear();
   }
 
