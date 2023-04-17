@@ -1,4 +1,4 @@
-// Copyright (c) 2019, Map IV, Inc.
+// Copyright (c) 2023, MAP IV, Inc.
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -8,7 +8,7 @@
 // * Redistributions in binary form must reproduce the above copyright notice,
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
-// * Neither the name of the Map IV, Inc. nor the names of its contributors
+// * Neither the name of the MAP IV, Inc. nor the names of its contributors
 //   may be used to endorse or promote products derived from this software
 //   without specific prior written permission.
 //
@@ -23,38 +23,35 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-/*
- * distance.cpp
- * Author MapIV Sekino
- */
+#ifndef DISTANCE_HPP
+#define DISTANCE_HPP
 
-#include "navigation/distance.hpp"
+#include <Eigen/Core>
+#include <Eigen/Dense>
 
-DistanceEstimator::DistanceEstimator()
+struct DistanceStatus
 {
-  // Initialization
-  is_estimation_started_ = false;
-  is_velocity_valid_ = false;
-  is_canless_mode_ = false;
-  previous_time_ = -1.0;
-  accumulated_distance_ = 0.0;
-}
+  bool is_estimation_started;
+  double estimated_distance;
+};
 
-DistanceStatus DistanceEstimator::velocityCallback(const double& stamp, const Eigen::Vector3d& velocity)
+class DistanceEstimator
 {
-  // Accumulate
-  if (is_estimation_started_)
-  {
-    accumulated_distance_ += velocity[0] * (stamp - previous_time_);
-  }
+public:
+  DistanceEstimator();
+  DistanceStatus velocityCallback(const double& stamp, const Eigen::Vector3d& velocity);
+  void velocityStatusCallback(const bool& is_velocity_valid) { is_velocity_valid_ = is_velocity_valid; }
+  void setCanlessMode(const bool& is_canless_mode) { is_canless_mode_ = is_canless_mode; }
 
-  DistanceStatus status;
-  status.is_estimation_started = is_estimation_started_;
-  status.estimated_distance = accumulated_distance_;
+private:
+  // Flags
+  bool is_estimation_started_;
+  bool is_velocity_valid_;
+  bool is_canless_mode_;
 
-  // Update internal status
-  previous_time_ = stamp;
-  is_estimation_started_ = true;
+  // Distance
+  double previous_time_;
+  double accumulated_distance_;
+};
 
-  return status;
-}
+#endif

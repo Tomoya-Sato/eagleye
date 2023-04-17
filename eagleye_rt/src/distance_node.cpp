@@ -28,36 +28,64 @@
  * Author MapIV Sekino
  */
 
-#include "ros/ros.h"
-#include "coordinate/coordinate.hpp"
-#include "navigation/navigation.hpp"
+#include <ros/ros.h>
+#include <navigation/distance.hpp>
+#include <navigation/navigation.hpp>
 
-static ros::Publisher _pub;
-static geometry_msgs::TwistStamped _velocity;
-static eagleye_msgs::StatusStamped _velocity_status;
-static eagleye_msgs::Distance _distance;
-
-struct DistanceStatus _distance_status;
-
-static bool _use_canless_mode;
-
-void velocity_status_callback(const eagleye_msgs::StatusStamped::ConstPtr& msg)
+class DistanceEstimatorNode
 {
-  _velocity_status = *msg;
-}
-
-void velocity_callback(const geometry_msgs::TwistStamped::ConstPtr& msg)
-{
-  if(_use_canless_mode && !_velocity_status.status.enabled_status) return;
-
-  _distance.header = msg->header;
-  _distance.header.frame_id = "base_link";
-  _velocity = *msg;
-  distance_estimate(_velocity, &_distance_status, &_distance);
-
-  if(_distance_status.time_last != 0)
+public:
+  DistanceEstimatorNode(ros::NodeHandle& nh) : nh_(nh)
   {
-    _pub.publish(_distance);
+    bool use_canless_mode = false;
+    nh_.getParam("use_canless_mode", use_canless_mode);
+
+    estimator_.setCanlessMode(use_canless_mode);
+
+    distance_pub_ = nh_.advertise<eagleye_msgs::Distance>("distance", 1000);
+    velocity_status_sub_ = nh_.subscribe("velocity_status", 1000, DistanceEstimator::velocityStatusCallback, this, ros::TransportHints().tcpNoDelay());
+    twist_sub_ = nh_.subscribe("velocity", 1000, DistanceEstimator::twistCallback, this, ros::TransportHints().tcpNoDelay());
+  }
+  void run()
+  {
+    ros::spin();
+  }
+
+private:
+  // ROS
+  ros::NodeHandle nh_;
+  ros::Publisher distance_pub_;
+  ros::Subscriber velocity_status_sub_;
+  ros::Subscriber twist_sub_;
+
+  // Estimator
+  DistanceEstimator estimator_;
+
+  // Callback
+  void velocityStatusCallback(const eagleye_msgs::StatusStamped::ConstPtr& msg)
+  {
+    estimator_.velocityStatusCallback(msg->status.enabled_status);
+  }
+
+  void twistCallback(const geometry_msgs::TwistStamped::ConstPtr& msg)
+  {
+    // Trigger estimation
+    double stamp = msg->header.stamp.toSec();
+    Eigen::Vector3d velocity(msg->twist.linear.x, msg->twist.linear.y, msg->twist.linear.z);
+    DistanceStatus distance_status = estimator_.velocityCallback(stamp, velocity);
+
+    // Convert to ROS message
+    if (distance_status.is_estimation_started)
+    {
+      eagleye_msgs::Distance distance_msg;
+      distance_msg.header = msg->header;
+      distance_msg.header.frame_id = "base_link";
+
+      distance_msg.distance = distance_status.estimated_distance;
+      distance_msg.status.enabled_status = true;
+
+      distance_pub_.publish(distance_msg);
+    }
   }
 }
 
@@ -67,13 +95,8 @@ int main(int argc, char** argv)
 
   ros::NodeHandle nh;
 
-  nh.getParam("use_canless_mode",_use_canless_mode);
-
-  ros::Subscriber sub1 = nh.subscribe("velocity", 1000, velocity_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub2 = nh.subscribe("velocity_status", 1000, velocity_status_callback, ros::TransportHints().tcpNoDelay());
-  _pub = nh.advertise<eagleye_msgs::Distance>("distance", 1000);
-
-  ros::spin();
+  DistanceEstimatorNode node(nh);
+  node.run();
 
   return 0;
 }
