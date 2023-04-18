@@ -43,8 +43,8 @@ public:
     estimator_.setCanlessMode(use_canless_mode);
 
     distance_pub_ = nh_.advertise<eagleye_msgs::Distance>("distance", 1000);
-    velocity_status_sub_ = nh_.subscribe("velocity_status", 1000, DistanceEstimator::velocityStatusCallback, this, ros::TransportHints().tcpNoDelay());
-    twist_sub_ = nh_.subscribe("velocity", 1000, DistanceEstimator::twistCallback, this, ros::TransportHints().tcpNoDelay());
+    velocity_status_sub_ = nh_.subscribe("velocity_status", 1000, &DistanceEstimatorNode::velocityStatusCallback, this, ros::TransportHints().tcpNoDelay());
+    twist_sub_ = nh_.subscribe("velocity", 1000, &DistanceEstimatorNode::twistCallback, this, ros::TransportHints().tcpNoDelay());
   }
   void run()
   {
@@ -87,7 +87,7 @@ private:
       distance_pub_.publish(distance_msg);
     }
   }
-}
+};
 
 int main(int argc, char** argv)
 {

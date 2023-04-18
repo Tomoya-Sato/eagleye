@@ -42,6 +42,7 @@
 #include "coordinate/coordinate.hpp"
 #include "navigation/navigation.hpp"
 #include "gnss_converter/nmea2fix.hpp"
+#include <navigation/distance.hpp>
 
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -162,6 +163,9 @@ private:
   std::vector<kml_utils::Point> smoothingLLH2PointVector();
   std::vector<kml_utils::Point> rtklibnavVector2PointVector();
   std::pair<std::vector<kml_utils::Point> , std::vector<kml_utils::Point> > ggaVector2PointVectorPair();
+
+  // Estimator
+  DistanceEstimator distance_estimator_;
 
 public:
 

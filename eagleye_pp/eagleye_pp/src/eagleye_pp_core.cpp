@@ -625,9 +625,11 @@ void eagleye_pp::estimatingEagleye(bool arg_forward_flag)
   geometry_msgs::TwistWithCovarianceStamped _eagleye_twist_with_covariance;
   eagleye_msgs::StatusStamped _velocity_status;
 
+  // Initialize estimators
   VelocityEstimator velocity_estimator;
   velocity_estimator.setParam(config_file_);
 
+  distance_estimator_.setCanlessMode(use_canless_mode_);
 
   int last_prog = -1, current_prog;
   int i = 0;
@@ -729,7 +731,15 @@ void eagleye_pp::estimatingEagleye(bool arg_forward_flag)
     _distance.header = imu_[i].header;
     if(_distance.header.stamp.toSec() != 0)
     {
-      distance_estimate(_correction_velocity, &distance_status, &_distance);
+      double stamp = _correction_velocity.header.stamp.toSec();
+      Eigen::Vector3d velocity(_correction_velocity.twist.linear.x, _correction_velocity.twist.linear.y, _correction_velocity.twist.linear.z);
+      DistanceStatus distance_status = distance_estimator_.velocityCallback(stamp, velocity);
+
+      _distance.header = _correction_velocity.header;
+      _distance.header.frame_id = "base_link";
+
+      _distance.distance = distance_status.estimated_distance;
+      _distance.status.enabled_status = distance_status.is_estimation_started;
     }
 
     _height.header = imu_[i].header;

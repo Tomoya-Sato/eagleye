@@ -81,11 +81,6 @@ struct VelocityScaleFactorStatus
   bool estimate_start_status;
 };
 
-struct DistanceStatus
-{
-  double time_last;
-};
-
 struct YawrateOffsetStopParameter
 {
   double imu_rate;
@@ -472,7 +467,6 @@ extern void velocity_scale_factor_estimate(const rtklib_msgs::RtklibNav, const g
   VelocityScaleFactorStatus*, geometry_msgs::TwistStamped*, eagleye_msgs::VelocityScaleFactor*);
 extern void velocity_scale_factor_estimate(const nmea_msgs::Gprmc, const geometry_msgs::TwistStamped, const VelocityScaleFactorParameter,
   VelocityScaleFactorStatus*, geometry_msgs::TwistStamped*, eagleye_msgs::VelocityScaleFactor*);
-extern void distance_estimate(const geometry_msgs::TwistStamped, DistanceStatus*,eagleye_msgs::Distance*);
 extern void yawrate_offset_stop_estimate(const geometry_msgs::TwistStamped, const sensor_msgs::Imu, const YawrateOffsetStopParameter,
   YawrateOffsetStopStatus*, eagleye_msgs::YawrateOffset*);
 extern void yawrate_offset_estimate(const geometry_msgs::TwistStamped, const eagleye_msgs::YawrateOffset,const eagleye_msgs::Heading,
