@@ -50,6 +50,7 @@ add_library(navigation
   src/enable_additional_rolling.cpp
   src/rolling.cpp
   src/velocity_estimator.cpp
+  src/imu_correction.cpp
 )
 
 target_link_libraries(navigation

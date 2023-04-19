@@ -29,66 +29,109 @@
  */
 
 #include "ros/ros.h"
-#include "coordinate/coordinate.hpp"
 #include "navigation/navigation.hpp"
+#include "navigation/imu_correction.hpp"
 
-static ros::Publisher _pub;
-static eagleye_msgs::YawrateOffset _yawrate_offset;
-static eagleye_msgs::AngularVelocityOffset _angular_velocity_offset_stop;
-static eagleye_msgs::AccXOffset _acc_x_offset;
-static eagleye_msgs::AccXScaleFactor _acc_x_scale_factor;
-static sensor_msgs::Imu _imu;
-
-static sensor_msgs::Imu _correction_imu;
-
-
-void yawrate_offset_callback(const eagleye_msgs::YawrateOffset::ConstPtr& msg)
+// AVOS: angular_velocity_offset_stop
+namespace ealgeye_navigation
 {
-  _yawrate_offset = *msg;
-}
-
-void angular_velocity_offset_stop_callback(const eagleye_msgs::AngularVelocityOffset::ConstPtr& msg)
+class IMUCorrectionNode
 {
-  _angular_velocity_offset_stop = *msg;
-}
-
-void acc_x_offset_callback(const eagleye_msgs::AccXOffset::ConstPtr& msg)
-{
-  _acc_x_offset = *msg;
-}
-
-void acc_x_scale_factor_callback(const eagleye_msgs::AccXScaleFactor::ConstPtr& msg)
-{
-  _acc_x_scale_factor = *msg;
-}
-
-void imu_callback(const sensor_msgs::Imu::ConstPtr& msg)
-{
-  _imu = *msg;
-  _correction_imu.header = _imu.header;
-  _correction_imu.orientation = _imu.orientation;
-  _correction_imu.orientation_covariance = _imu.orientation_covariance;
-  _correction_imu.angular_velocity_covariance = _imu.angular_velocity_covariance;
-  _correction_imu.linear_acceleration_covariance = _imu.linear_acceleration_covariance;
-
-  if (_acc_x_offset.status.enabled_status && _acc_x_scale_factor.status.enabled_status)
+public:
+  IMUCorrectionNode(ros::NodeHandle& nh) : nh_(nh)
   {
-    _correction_imu.linear_acceleration.x = _imu.linear_acceleration.x * _acc_x_scale_factor.acc_x_scale_factor + _acc_x_offset.acc_x_offset;
-    _correction_imu.linear_acceleration.y = _imu.linear_acceleration.y;
-    _correction_imu.linear_acceleration.z = _imu.linear_acceleration.z;
+    std::string yaml_file;
+    nh_.getParam("yaml_file", yaml_file);
+    std::cout << "yaml_file: " << yaml_file << std::endl;
+
+    IMUCorrectionParameter param;
+    param.load(yaml_file);
+    corrector_.setParameter(param);
+
+    imu_transformed_pub_ = nh_.advertise<sensor_msgs::Imu>("imu/data_tf_converted", 1000);
+    imu_unbiased_pub_ = nh_.advertise<sensor_msgs::Imu>("imu/data_corrected", 1000);
+    yawrate_offset_sub_ = nh_.subscribe("yawrate_offset_2nd", 1000, &IMUCorrector::yawrateOffsetCallback, this, ros::TransportHints().tcpNoDelay());
+    AVOS_sub_ = nh_.subscribe("angular_velocity_offset_stop", 1000, &IMUCorrector::AVOSCallback, this, ros::TransportHints().tcpNoDelay());
+    acc_x_offset_sub_ = nh_.subscribe("acc_x_offset", 1000, &IMUCorrector::accXOffsetCallback, this, ros::TransportHints().tcpNoDelay());
+    acc_x_scale_factor_sub_ = nh_.subscribe("acc_x_scale_factor", 1000, &IMUCorrector::accXScaleFactorCallback, this, ros::TransportHints().tcpNoDelay());
+    imu_sub_ = nh_.subscribe("imu/data_raw", 1000, &IMUCorrector::imuCallback, this, ros::TransportHints().tcpNoDelay());
   }
-  else
+  void run()
   {
-    _correction_imu.linear_acceleration.x = _imu.linear_acceleration.x;
-    _correction_imu.linear_acceleration.y = _imu.linear_acceleration.y;
-    _correction_imu.linear_acceleration.z = _imu.linear_acceleration.z;
+    ros::spin();
   }
 
-  _correction_imu.angular_velocity.x = _imu.angular_velocity.x + _angular_velocity_offset_stop.angular_velocity_offset.x;
-  _correction_imu.angular_velocity.y = _imu.angular_velocity.y + _angular_velocity_offset_stop.angular_velocity_offset.y;
-  _correction_imu.angular_velocity.z = -1 * (_imu.angular_velocity.z + _angular_velocity_offset_stop.angular_velocity_offset.z);
+private:
+  // ROS
+  ros::NodeHandle nh_;
+  ros::Publisher imu_pub_;
+  ros::Subscriber yawrate_offset_sub_;
+  ros::Subscriber AVOS_sub_;
+  ros::Subscriber acc_x_offset_sub_;
+  ros::Subscriber acc_x_scale_factor_sub_;
+  ros::Subscriber imu_sub_;
 
-  _pub.publish(_correction_imu);
+  // Corrector
+  IMUCorrection corrector_;
+
+  // Callbacks
+  void yawrateOffsetCallback(const eagleye_msgs::YawrateOffset::ConstPtr& msg)
+  {
+    // Do nothing?
+  }
+
+  void AVOSCallback(const eagleye_msgs::AngularVelocityOffset::ConstPtr& msg)
+  {
+    Eigen::Vector3d angular_velocity_bias(msg->angular_velocity_offset.x, msg->angular_velocity_offset.y, msg->angular_velocity_offset.z);
+    corrector_.angularBiasCallback(angular_velocity_bias);
+  }
+
+  void accXOffsetCallback(const eagleye_msgs::AccXOffset::ConstPtr& msg)
+  {
+    double acc_x_bias = msg->acc_x_offset;
+    corrector_.accXBiasCallback(acc_x_bias);
+  }
+
+  void accXScaleFactorCallback(const eagleye_msgs::AccXScaleFactor::ConstPtr& msg)
+  {
+    double acc_x_scale_factor = msg->acc_x_scale_factor;
+    corrector_.accXScaleFactorCallback(acc_x_scale_factor);
+  }
+
+  void imuCallback(const sensor_msgs::Imu::ConstPtr& msg)
+  {
+    IMUData raw_data;
+    raw_data.linear_acc = Eigen::Vector3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+    raw_data.angular_velocity = Eigen::Vector3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
+    raw_data.is_transformed = false;
+    raw_data.is_unbiased = false;
+
+    IMUData transformed_data = corrector_.transformIMUData(raw_data);
+    IMUData unbiased_data = corrector_.unbiasIMUData(transformed_data);
+
+    sensor_msgs::Imu transformed_msg;
+    transformed_msg = *msg;
+    transformed_msg.header.frame_id = "base_link";
+    transformed_msg.linear_acceleration.x = transformed_data.linear_acc.x;
+    transformed_msg.linear_acceleration.y = transformed_data.linear_acc.y;
+    transformed_msg.linear_acceleration.z = transformed_data.linear_acc.z;
+    transformed_msg.angular_velocity.x = transformed_data.angular_velocity.x;
+    transformed_msg.angular_velocity.y = transformed_data.angular_velocity.y;
+    transformed_msg.angular_velocity.z = transformed_data.angular_velocity.z;
+
+    sensor_msgs::Imu unbiased_msg;
+    unbiased_msg = transformed_msg;
+    unbiased_msg.linear_acceleration.x = transformed_data.linear_acc.x;
+    unbiased_msg.linear_acceleration.y = transformed_data.linear_acc.y;
+    unbiased_msg.linear_acceleration.z = transformed_data.linear_acc.z;
+    unbiased_msg.angular_velocity.x = transformed_data.angular_velocity.x;
+    unbiased_msg.angular_velocity.y = transformed_data.angular_velocity.y;
+    unbiased_msg.angular_velocity.z = transformed_data.angular_velocity.z;
+
+    imu_transformed_pub_.publish(transformed_msg);
+    imu_unbiased_pub_.publish(unbiased_msg);
+  }
+}
 }
 
 int main(int argc, char** argv)
@@ -96,14 +139,8 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "correction_imu");
   ros::NodeHandle nh;
 
-  ros::Subscriber sub1 = nh.subscribe("yawrate_offset_2nd", 1000, yawrate_offset_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub2 = nh.subscribe("angular_velocity_offset_stop", 1000, angular_velocity_offset_stop_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub3 = nh.subscribe("acc_x_offset", 1000, acc_x_offset_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub4 = nh.subscribe("acc_x_scale_factor", 1000, acc_x_scale_factor_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber sub5 = nh.subscribe("imu/data_tf_converted", 1000, imu_callback, ros::TransportHints().tcpNoDelay());
-  _pub = nh.advertise<sensor_msgs::Imu>("imu/data_corrected", 1000);
-
-  ros::spin();
+  eagleye_navigation::IMUCorrectionNode node(nh);
+  node.run();
 
   return 0;
 }
