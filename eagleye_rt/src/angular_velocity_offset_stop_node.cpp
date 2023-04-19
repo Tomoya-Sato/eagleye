@@ -79,9 +79,9 @@ private:
     // Convert to ROS message
     eagleye_msgs::AngularVelocityOffset offset_stop_msg;
     offset_stop_msg.header = msg->header;
-    offset_stop_msg.angular_velocity_offset.x = offset_stop_status.offset_stop[0];
-    offset_stop_msg.angular_velocity_offset.y = offset_stop_status.offset_stop[1];
-    offset_stop_msg.angular_velocity_offset.z = offset_stop_status.offset_stop[2];
+    offset_stop_msg.angular_velocity_offset.x = -offset_stop_status.offset_stop[0];
+    offset_stop_msg.angular_velocity_offset.y = -offset_stop_status.offset_stop[1];
+    offset_stop_msg.angular_velocity_offset.z = -offset_stop_status.offset_stop[2];
     offset_stop_msg.status.estimate_status = offset_stop_status.is_estimated_now;
     offset_stop_msg.status.enabled_status = offset_stop_status.is_estimation_started;
 
